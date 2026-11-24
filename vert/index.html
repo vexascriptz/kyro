@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Stretch one or many videos to fill a vertical 9:16 frame. Processing happens on your device." />
+  <meta name="theme-color" content="#0b0b0b" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%23171717%27/%3E%3Cpath d=%27M11 5h10v22H11zM16 9v14m-3-11 3-3 3 3m-6 8 3 3 3-3%27 fill=%27none%27 stroke=%27white%27 stroke-width=%271.5%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E" />
+  <title>Vert — catto</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 16px 56px;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: #0c0c10;
+      color: #f3f3f5;
+    }
+
+    h1 { margin: 0 0 8px; font-size: 1.7rem; letter-spacing: -0.01em; }
+    .sub { margin: 0 0 24px; max-width: 460px; text-align: center; line-height: 1.5; color: #9b9bab; font-size: 0.95rem; }
+
+    .card {
+      width: 100%;
+      max-width: 560px;
+      margin-bottom: 16px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      background: #17171f;
+      border: 1px solid #272733;
+      border-radius: 16px;
+    }
+
+    .drop {
+      display: block;
+      padding: 24px 16px;
+      border: 2px dashed #3d3d4d;
+      border-radius: 12px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .drop:hover, .drop.over { border-color: #ff3b6b; background: #1f1820; }
+    .drop.disabled { opacity: 0.5; pointer-events: none; }
+    .drop input { display: none; }
+    .drop strong { display: block; margin-bottom: 4px; font-size: 1.05rem; }
+    .drop span { color: #9b9bab; font-size: 0.9rem; }
+
+    .options { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .field { display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem; color: #aeaebb; }
+    select {
+      font: inherit;
+      padding: 10px 12px;
+      color: #f3f3f5;
+      background: #0f0f15;
+      border: 1px solid #2f2f3c;
+      border-radius: 10px;
+    }
+
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; }
+    .btn {
+      padding: 12px 16px;
+      border: 0;
+      border-radius: 12px;
+      font: inherit;
+      font-weight: 600;
+      text-align: center;
+      color: #fff;
+      background: #ff3b6b;
+      cursor: pointer;
+    }
+    .btn.secondary { background: #2a2a36; }
+
+    .global { margin: 0; min-height: 1.3em; text-align: center; font-size: 0.9rem; color: #c9c9d4; }
+    .global.error { color: #ff7a7a; }
+
+    .queue {
+      width: 100%;
+      max-width: 560px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .item {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: #17171f;
+      border: 1px solid #272733;
+      border-radius: 14px;
+    }
+    .item.is-error { border-color: #5a2a33; }
+    .item-head { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .meta { font-size: 0.8rem; color: #7d7d8c; }
+    .line { font-size: 0.9rem; color: #c9c9d4; overflow-wrap: anywhere; }
+    .item.is-error .line { color: #ff8a8a; }
+
+    .bar { height: 6px; overflow: hidden; border-radius: 99px; background: #2a2a36; }
+    .bar > div {
+      height: 100%;
+      width: 0;
+      background: linear-gradient(90deg, #ff3b6b, #ff8a4c);
+      transition: width 0.25s linear;
+    }
+
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip {
+      padding: 7px 12px;
+      border: 0;
+      border-radius: 999px;
+      font: inherit;
+      font-size: 0.85rem;
+      color: #f3f3f5;
+      background: #2a2a36;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .chip.primary { background: #ff3b6b; }
+    .chip.ghost { background: transparent; border: 1px solid #3a3a48; color: #aeaebb; }
+
+    /* 9:16 box. The video fills it with object-fit: fill, which is the stretch. */
+    .frame {
+      position: relative;
+      width: 100%;
+      max-width: 220px;
+      aspect-ratio: 9 / 16;
+      margin: 4px auto 0;
+      overflow: hidden;
+      border-radius: 12px;
+      background: #000;
+    }
+    .frame video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: fill;
+      background: #000;
+    }
+
+    .tip { max-width: 560px; margin: 8px 0 0; text-align: center; font-size: 0.8rem; line-height: 1.5; color: #7d7d8c; }
+  
+    /* catto shared design */
+    :root { --bg:#0b0b0b; --panel:#111; --line:#292929; --text:#f3f3f3; --muted:#969696; --accent:#fff; }
+    body { background:var(--bg); color:var(--text); font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; -webkit-font-smoothing:antialiased; padding:18px 16px 44px; }
+    .site-head { width:100%; max-width:560px; display:flex; align-items:center; justify-content:space-between; padding:9px 0 16px; margin-bottom:30px; border-bottom:1px solid var(--line); color:var(--muted); font-size:12px; }
+    .back { color:#ddd; text-decoration:none; transition:color .18s,text-shadow .18s; }
+    .back:hover { color:white; text-shadow:0 0 9px #fff7; }
+    .brand { display:flex; align-items:center; gap:12px; margin:0 0 8px; }
+    .brand svg { width:37px; height:37px; padding:5px; background:#171717; border:1px solid #303030; border-radius:9px; }
+    h1 { margin:0; font-size:42px; line-height:1; font-weight:600; letter-spacing:-2.5px; }
+    h1 span { text-shadow:0 0 12px #fff8; }
+    .sub { color:var(--muted); font-size:13px; margin-bottom:27px; }
+    .card,.item { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; }
+    .card { gap:14px; }
+    .drop { padding:28px 15px; border:1px dashed #414141; border-radius:8px; }
+    .drop:hover,.drop.over { background:#1a1a1a; border-color:#eee; }
+    .drop strong { font-size:14px; font-weight:600; }
+    .drop span,.field,.meta,.tip { color:var(--muted); }
+    .drop span,.field { font-size:12px; }
+    select { background:#1b1b1b; border:1px solid #333; color:#eee; border-radius:7px; min-width:0; }
+    .options { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+    .btn,.chip { background:#1e1e1e; border:1px solid #333; color:#eee; border-radius:7px; transition:background .18s,border-color .18s,box-shadow .18s; }
+    .btn:hover,.chip:hover { background:#292929; border-color:#666; }
+    .btn.secondary { background:#1e1e1e; }
+    .chip.primary { background:#f2f2f2; color:#111; border-color:#fff; box-shadow:0 0 12px #fff2; }
+    .chip.primary:hover { background:#fff; box-shadow:0 0 16px #fff4; }
+    .chip.ghost { color:#aaa; border-color:#333; }
+    .bar { background:#333; }
+    .bar>div { background:#eee; box-shadow:0 0 6px #fff5; }
+    .global,.line { color:#aaa; font-size:12px; }
+    .frame { border-radius:8px; }
+    .item.is-error { border-color:#6b3b3b; }
+    button:focus-visible,a:focus-visible,select:focus-visible,.drop:focus-within { outline:1px solid #fff; outline-offset:3px; }
+    .site-head,.brand,.sub,.card { animation:enter .45s cubic-bezier(.2,.7,.2,1) both; }
+    .card { animation-delay:.07s; }
+    @keyframes enter { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+    @media(max-width:400px) { .site-head { margin-bottom:25px; } .card { padding:13px; } select { padding:9px 6px; font-size:12px; } }
+    @media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none!important; transition:none!important; } }
+
+  </style>
+</head>
+<body>
+  <header class="site-head"><a href="../" class="back">← Portfolio</a><span>catto / tools</span></header>
+  <div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="14" height="26" rx="3"/><path d="M16 8v16m-3-13 3-3 3 3m-6 10 3 3 3-3"/></svg><h1>vert<span>.</span></h1></div>
+  <p class="sub">Batch stretch videos to 9:16. No cropping, no uploads.</p>
+
+  <section class="card">
+    <label class="drop" id="drop">
+      <input type="file" id="file" accept="video/*,.mov,.mp4,.m4v,.webm,.mkv" multiple />
+      <strong>Add videos</strong>
+      <span>Tap to choose one or more, or drop them here</span>
+    </label>
+
+    <div class="options">
+      <label class="field">Output size
+        <select id="resolution">
+          <option value="1080" selected>1080 × 1920 (full HD)</option>
+          <option value="720">720 × 1280 (smaller)</option>
+        </select>
+      </label>
+      <label class="field">Quality
+        <select id="quality">
+          <option value="very-high">Best</option>
+          <option value="high" selected>Balanced</option>
+        </select>
+      </label>
+    </div>
+
+    <p class="global" id="global"></p>
+    <div class="toolbar">
+      <button class="btn" id="stopBtn" hidden>Stop</button>
+      <button class="btn secondary" id="saveAllBtn" hidden>Save all to Photos</button>
+      <button class="btn secondary" id="clearBtn" hidden>Clear finished</button>
+    </div>
+  </section>
+
+  <ul class="queue" id="queue"></ul>
+
+  <p class="tip">
+    Videos are processed with your device’s video hardware, usually much faster than playback.
+    On a computer, processing keeps going if you switch to another tab. On a phone, keep Safari or Chrome open with the screen on,
+    because phones pause web pages when you leave the app.
+  </p>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const $ = (id) => document.getElementById(id);
+      const drop = $('drop');
+      const fileInput = $('file');
+      const resolution = $('resolution');
+      const quality = $('quality');
+      const globalEl = $('global');
+      const stopBtn = $('stopBtn');
+      const saveAllBtn = $('saveAllBtn');
+      const clearBtn = $('clearBtn');
+      const queue = $('queue');
+
+      // Conversions run one at a time. The hardware encoder is a single shared
+      // resource, so two jobs at once tend to slow each other down.
+      const ENGINE_COUNT = 1;
+      const VIDEO_RE = /\.(mp4|mov|m4v|webm|mkv)$/i;
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
+        (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.platform));
+
+      class CancelledError extends Error {}
+
+      // One Web Worker running the video engine. Requests are matched to replies by id.
+      class Engine {
+        constructor() {
+          this.worker = new Worker('worker.js', { type: 'module' });
+          this.pending = new Map();
+          this.nextId = 1;
+          this.busy = false;
+          this.worker.onmessage = (e) => this.handle(e.data);
+          this.worker.onerror = () => {
+            for (const job of this.pending.values()) {
+              job.reject(new Error('The video engine couldn’t load. Check your connection and reload.'));
+            }
+            this.pending.clear();
+          };
+        }
+
+        request(msg, onProgress) {
+          const id = this.nextId++;
+          return new Promise((resolve, reject) => {
+            this.pending.set(id, { resolve, reject, onProgress });
+            this.worker.postMessage({ ...msg, id });
+          });
+        }
+
+        handle(msg) {
+          const job = this.pending.get(msg.id);
+          if (!job) return;
+          if (msg.type === 'progress') {
+            if (job.onProgress) job.onProgress(msg.value);
+            return;
+          }
+          this.pending.delete(msg.id);
+          if (msg.type === 'probed' || msg.type === 'done') job.resolve(msg);
+          else if (msg.type === 'cancelled') job.reject(new CancelledError('Stopped'));
+          else job.reject(new Error(msg.message));
+        }
+
+        cancel() {
+          this.worker.postMessage({ type: 'cancel' });
+        }
+      }
+
+      const supported =
+        'Worker' in window && 'VideoEncoder' in window && 'VideoDecoder' in window && 'OffscreenCanvas' in window;
+
+      const engines = supported ? Array.from({ length: ENGINE_COUNT }, () => new Engine()) : [];
+      const items = [];
+      let uid = 0;
+      let running = false;          // whether queued items may start
+      let sessionActive = false;    // true from the first file until nothing is left to do
+      let sessionCompleted = 0;     // videos finished during this session
+      let wakeLock = null;
+      let wakeWanted = false;
+
+      const isActive = (item) => item.status === 'checking' || item.status === 'queued' || item.status === 'working';
+      const isFinished = (item) => ['done', 'failed', 'unreadable', 'stopped'].includes(item.status);
+
+      function outputName(name, ext) {
+        return `${name.replace(/\.[^.]+$/, '')}-9x16.${ext}`;
+      }
+
+      function formatBytes(bytes) {
+        return `${(bytes / 1048576).toFixed(1)} MB`;
+      }
+
+      function formatTime(seconds) {
+        if (!Number.isFinite(seconds)) return '';
+        const m = Math.floor(seconds / 60);
+        const s = Math.floor(seconds % 60);
+        return `${m}:${String(s).padStart(2, '0')}`;
+      }
+
+      function setGlobal(message, isError = false) {
+        globalEl.textContent = message;
+        globalEl.classList.toggle('error', isError);
+      }
+
+      // ---------- Adding and probing files ----------
+
+      function addFiles(fileList) {
+        const files = [...fileList].filter((f) => f.type.startsWith('video/') || VIDEO_RE.test(f.name));
+        if (!files.length) {
+          setGlobal('Those files don’t look like videos.', true);
+          return;
+        }
+        for (const file of files) {
+          const item = {
+            id: ++uid,
+            file,
+            name: file.name,
+            srcUrl: URL.createObjectURL(file),
+            info: null,
+            status: 'checking',
+            progress: 0,
+            error: '',
+            target: null,
+            startedAt: 0,
+            elapsed: 0,
+            outFile: null,
+            outUrl: null,
+            audioDropped: false,
+            removed: false,
+            el: null,
+          };
+          item.el = buildItem(item);
+          items.push(item);
+          queue.append(item.el);
+          renderItem(item);
+          probe(item);
+        }
+        startSession();
+        updateSummary();
+      }
+
+      function probe(item) {
+        engines[0].request({ type: 'probe', file: item.file })
+          .then((msg) => {
+            if (item.removed || item.status !== 'checking') return;
+            item.info = msg.info;
+            item.status = msg.info.decodable ? 'queued' : 'unreadable';
+            if (!msg.info.decodable) item.error = 'This browser can’t decode this video’s format. Try an MP4 (H.264) file.';
+            renderItem(item);
+            pump();
+          })
+          .catch((err) => {
+            if (item.removed || item.status !== 'checking') return;
+            item.status = 'unreadable';
+            item.error = err.message;
+            renderItem(item);
+            pump();
+          });
+      }
+
+      // ---------- Running conversions ----------
+
+      function startSession() {
+        running = true;
+        if (!sessionActive) {
+          sessionActive = true;
+          sessionCompleted = 0;
+          setWakeLock(true);
+        }
+      }
+
+      function endSession() {
+        if (!sessionActive) return;
+        sessionActive = false;
+        running = false;
+        setWakeLock(false);
+        if (sessionCompleted) notifyDone(sessionCompleted);
+      }
+
+      // Hands queued items to free engines, then ends the session if nothing is left.
+      function pump() {
+        if (running) {
+          for (const engine of engines) {
+            if (engine.busy) continue;
+            const next = items.find((i) => i.status === 'queued');
+            if (!next) break;
+            convert(engine, next);
+          }
+        }
+        if (!items.some(isActive)) endSession();
+        updateSummary();
+      }
+
+      async function convert(engine, item) {
+        const width = Number(resolution.value);
+        engine.busy = true;
+        item.status = 'working';
+        item.progress = 0;
+        item.target = { width, height: Math.round((width * 16) / 9) };
+        item.startedAt = performance.now();
+        renderItem(item);
+
+        try {
+          const msg = await engine.request(
+            { type: 'convert', file: item.file, width, quality: quality.value },
+            (value) => {
+              item.progress = value;
+              renderProgress(item);
+            },
+          );
+          item.elapsed = (performance.now() - item.startedAt) / 1000;
+          const ext = msg.mimeType === 'video/mp4' ? 'mp4' : 'webm';
+          item.outFile = new File([msg.buffer], outputName(item.name, ext), { type: msg.mimeType });
+          item.outUrl = URL.createObjectURL(item.outFile);
+          item.audioDropped = Boolean(msg.audioDropped);
+          item.progress = 1;
+          item.status = 'done';
+          sessionCompleted++;
+        } catch (err) {
+          if (err instanceof CancelledError) {
+            item.status = 'stopped';
+          } else {
+            item.status = 'failed';
+            item.error = err.message;
+          }
+        } finally {
+          engine.busy = false;
+          renderItem(item);
+          pump();
+        }
+      }
+
+      function retry(item) {
+        item.status = 'queued';
+        item.error = '';
+        item.progress = 0;
+        startSession();
+        renderItem(item);
+        pump();
+      }
+
+      function removeItem(item) {
+        item.removed = true;
+        items.splice(items.indexOf(item), 1);
+        URL.revokeObjectURL(item.srcUrl);
+        if (item.outUrl) URL.revokeObjectURL(item.outUrl);
+        item.el.remove();
+        pump();
+      }
+
+      stopBtn.addEventListener('click', () => {
+        running = false;
+        for (const item of items) {
+          if (item.status === 'queued' || item.status === 'checking') {
+            item.status = 'stopped';
+            renderItem(item);
+          }
+        }
+        for (const engine of engines) {
+          if (engine.busy) engine.cancel();
+        }
+        pump();
+      });
+
+      clearBtn.addEventListener('click', () => {
+        for (const item of [...items]) {
+          if (isFinished(item)) removeItem(item);
+        }
+      });
+
+      // ---------- Saving to Photos / downloading ----------
+
+      function canShareFiles(files) {
+        try {
+          return Boolean(navigator.share && navigator.canShare && navigator.canShare({ files }));
+        } catch {
+          return false;
+        }
+      }
+
+      // Must be called straight from a click so mobile browsers allow the share sheet.
+      async function shareFiles(files) {
+        try {
+          await navigator.share({ files });
+        } catch (err) {
+          if (err.name !== 'AbortError') setGlobal(`Couldn’t open the share sheet: ${err.message}`, true);
+        }
+      }
+
+      saveAllBtn.addEventListener('click', () => {
+        shareFiles(items.filter((i) => i.status === 'done').map((i) => i.outFile));
+      });
+
+      // ---------- Background helpers ----------
+
+      async function setWakeLock(on) {
+        wakeWanted = on;
+        if (!('wakeLock' in navigator)) return;
+        try {
+          if (on && !wakeLock) {
+            wakeLock = await navigator.wakeLock.request('screen');
+            wakeLock.addEventListener('release', () => { wakeLock = null; });
+          } else if (!on && wakeLock) {
+            const lock = wakeLock;
+            wakeLock = null;
+            await lock.release();
+          }
+        } catch {
+          // Not granted right now (for example, low battery). Processing still runs.
+        }
+      }
+
+      // The screen lock is released when the page is hidden, so take it again when it comes back.
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && wakeWanted) setWakeLock(true);
+      });
+
+      function notifyDone(count) {
+        if (document.visibilityState === 'visible') return;
+        if (!('Notification' in window) || Notification.permission !== 'granted') return;
+        try {
+          new Notification('Stretch to 9:16', {
+            body: `${count} video${count === 1 ? '' : 's'} ready to save.`,
+          });
+        } catch {
+          // Notifications aren't available in this browser.
+        }
+      }
+
+      // Ask for notification permission from a click, which browsers require.
+      drop.addEventListener('click', () => {
+        if ('Notification' in window && Notification.permission === 'default') {
+          try { Notification.requestPermission(); } catch { /* not supported */ }
+        }
+      });
+
+      // Warn before closing the tab while videos are still processing.
+      window.addEventListener('beforeunload', (e) => {
+        if (items.some(isActive)) {
+          e.preventDefault();
+          e.returnValue = '';
+        }
+      });
+
+      // ---------- Rendering ----------
+
+      function buildItem(item) {
+        const li = document.createElement('li');
+        li.className = 'item';
+        li.innerHTML = `
+          <div class="item-head"><div class="name"></div><div class="meta"></div></div>
+          <div class="line"></div>
+          <div class="bar"><div></div></div>
+          <div class="actions">
+            <button class="chip" data-act="preview">Preview</button>
+            <button class="chip primary" data-act="share" hidden></button>
+            <a class="chip" data-act="download" hidden>Download</a>
+            <button class="chip" data-act="retry" hidden>Retry</button>
+            <button class="chip ghost" data-act="remove">Remove</button>
+          </div>
+          <div class="player frame" hidden><video playsinline controls></video></div>`;
+        return li;
+      }
+
+      function metaText(item) {
+        const parts = [];
+        if (item.info) {
+          parts.push(`${item.info.width}×${item.info.height}`);
+          const length = formatTime(item.info.duration);
+          if (length) parts.push(length);
+        }
+        if (item.target) parts.push(`→ ${item.target.width}×${item.target.height}`);
+        if (item.outFile) parts.push(formatBytes(item.outFile.size));
+        return parts.join(' · ');
+      }
+
+      function lineText(item) {
+        switch (item.status) {
+          case 'checking': return 'Checking file…';
+          case 'queued': return 'Waiting in line';
+          case 'working': return `Stretching… ${Math.round(item.progress * 100)}%`;
+          case 'done': {
+            const speed = item.info && Number.isFinite(item.info.duration) && item.elapsed > 0
+              ? ` · ${(item.info.duration / item.elapsed).toFixed(1)}× real time`
+              : '';
+            const notes = [];
+            if (item.outFile.type === 'video/webm') notes.push('saved as WebM');
+            if (item.audioDropped) notes.push('no sound: this browser couldn’t re-encode the audio');
+            return `Done in ${item.elapsed.toFixed(1)} s${speed}${notes.map((n) => ` · ${n}`).join('')}`;
+          }
+          case 'failed': return `Couldn’t convert: ${item.error}`;
+          case 'unreadable': return item.error;
+          case 'stopped': return 'Stopped';
+          default: return '';
+        }
+      }
+
+      function renderProgress(item) {
+        item.el.querySelector('.bar > div').style.width = `${Math.round(item.progress * 100)}%`;
+        if (item.status === 'working') item.el.querySelector('.line').textContent = lineText(item);
+      }
+
+      function syncPlayer(item) {
+        const video = item.el.querySelector('.player video');
+        const src = item.status === 'done' ? item.outUrl : item.srcUrl;
+        if (src && video.dataset.src !== src) {
+          video.dataset.src = src;
+          video.src = src;
+        }
+      }
+
+      function renderItem(item) {
+        const el = item.el;
+        const s = item.status;
+        const done = s === 'done';
+
+        el.classList.toggle('is-error', s === 'failed' || s === 'unreadable');
+        el.querySelector('.name').textContent = item.name;
+        el.querySelector('.meta').textContent = metaText(item);
+        el.querySelector('.line').textContent = lineText(item);
+        el.querySelector('.bar').hidden = s !== 'working';
+        renderProgress(item);
+
+        const show = (act, on) => {
+          el.querySelector(`[data-act="${act}"]`).hidden = !on;
+        };
+        show('preview', s !== 'unreadable');
+        show('share', done && canShareFiles([item.outFile]));
+        show('download', done);
+        show('retry', s === 'failed' || s === 'stopped');
+        show('remove', s !== 'working');
+
+        const shareBtn = el.querySelector('[data-act="share"]');
+        shareBtn.textContent = isMobile ? 'Save to Photos' : 'Share';
+
+        const download = el.querySelector('[data-act="download"]');
+        if (done) {
+          download.href = item.outUrl;
+          download.download = item.outFile.name;
+        }
+
+        const player = el.querySelector('.player');
+        if (!player.hidden) syncPlayer(item);
+      }
+
+      function updateSummary() {
+        const count = (...statuses) => items.filter((i) => statuses.includes(i.status)).length;
+        const working = count('working');
+        const waiting = count('queued', 'checking');
+        const ready = count('done');
+        const failed = count('failed', 'unreadable');
+        const stopped = count('stopped');
+
+        const parts = [];
+        if (working) parts.push(`${working} stretching`);
+        if (waiting) parts.push(`${waiting} waiting`);
+        if (ready) parts.push(`${ready} ready to save`);
+        if (failed) parts.push(`${failed} couldn’t be converted`);
+        if (stopped) parts.push(`${stopped} stopped`);
+
+        globalEl.classList.remove('error');
+        globalEl.textContent = items.length ? parts.join(' · ') : 'Add videos to get started.';
+
+        stopBtn.hidden = !(working || waiting);
+        clearBtn.hidden = !count('done', 'failed', 'unreadable', 'stopped');
+
+        const doneFiles = items.filter((i) => i.status === 'done').map((i) => i.outFile);
+        saveAllBtn.hidden = !(doneFiles.length > 1 && canShareFiles(doneFiles));
+        saveAllBtn.textContent = `${isMobile ? 'Save all' : 'Share all'} (${doneFiles.length}) to Photos`;
+      }
+
+      queue.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-act]');
+        if (!btn) return;
+        const item = items.find((i) => i.el.contains(btn));
+        if (!item) return;
+        switch (btn.dataset.act) {
+          case 'preview': togglePreview(item); break;
+          case 'share': shareFiles([item.outFile]); break;
+          case 'retry': retry(item); break;
+          case 'remove': removeItem(item); break;
+          default: break; // "download" is a plain link
+        }
+      });
+
+      function togglePreview(item) {
+        const player = item.el.querySelector('.player');
+        const button = item.el.querySelector('[data-act="preview"]');
+        player.hidden = !player.hidden;
+        button.textContent = player.hidden ? 'Preview' : 'Hide preview';
+        if (player.hidden) {
+          player.querySelector('video').pause();
+        } else {
+          syncPlayer(item);
+        }
+      }
+
+      // ---------- Input wiring ----------
+
+      fileInput.addEventListener('change', () => {
+        addFiles(fileInput.files);
+        fileInput.value = '';
+      });
+
+      ['dragenter', 'dragover'].forEach((type) => {
+        drop.addEventListener(type, (e) => {
+          e.preventDefault();
+          drop.classList.add('over');
+        });
+      });
+      ['dragleave', 'drop'].forEach((type) => {
+        drop.addEventListener(type, () => drop.classList.remove('over'));
+      });
+      drop.addEventListener('drop', (e) => {
+        e.preventDefault();
+        addFiles(e.dataTransfer.files);
+      });
+      // Stop the browser from opening a video that was dropped outside the box.
+      window.addEventListener('dragover', (e) => e.preventDefault());
+      window.addEventListener('drop', (e) => e.preventDefault());
+
+      if (!supported) {
+        fileInput.disabled = true;
+        drop.classList.add('disabled');
+        setGlobal('This browser can’t process video yet. Try a recent Chrome, Edge, Safari or Firefox.', true);
+      } else {
+        updateSummary();
+      }
+    })();
+  </script>
+</body>
+</html>
